@@ -10,21 +10,32 @@ struct ContentView: View {
     @State private var sudokuError = false
     @State private var data = Array(repeating: Array(repeating: 0, count: 9), count: 9)
     @State private var data_save = Array(repeating: Array(repeating: 0, count: 9), count: 9)
+    @State private var answers = false
+    @State private var nextChoices: [[Int]] = []
 
     var body: some View {
         let cellSize = CGFloat(40)
         let blockLineSize = CGFloat(3)
         let lineColor = Color.black
         VStack(spacing: 0) {
-            Text("Sudoku")
-                .font(.system(size: 30))
-                .fontWeight(.bold)
+            ZStack {
+                Text("Sudoku")
+                    .font(.system(size: 30))
+                    .fontWeight(.bold)
+                HStack {
+                    Text("answer")
+                    Toggle(isOn: $answers) {}
+                        .labelsHidden()
+                }
+                .offset(x: 130, y: 0)
+            }
             SudokuCells(cellSize: cellSize, blockLineSize: blockLineSize, lineColor: lineColor)
         }
         Spacer().frame(height: 8)
         VStack(spacing:4) {
             SudokuNumberButtons()
             SudokuFunctionButtons()
+            SudokuAnswerButtons()
         }
     }
 
@@ -146,6 +157,34 @@ struct ContentView: View {
                     .frame(width: 40, height: 40, alignment: .center)
                     .background(Color.mint)
                     .cornerRadius(10)
+            }
+        }
+    }
+
+    @ViewBuilder
+    func SudokuAnswerButtons() -> some View{
+        VStack(spacing: 4) {
+            ForEach(0..<3, id: \.self) { krow in
+                HStack(spacing: 4) { 
+                    ForEach(0..<5, id: \.self){ kcol in
+                        let k = krow * 5 + kcol                           
+                        Button(action: {
+                            if k < nextChoices.count {
+                                selectCell(row: nextChoices[k][0], col: nextChoices[k][1])
+                                setnumber(n: nextChoices[k][2])
+                            }
+                        }) {
+                            Text(getTextNextChoices(n: k, dt: nextChoices))
+                                .frame(width: 70, height: 40, alignment: .center)
+                                .foregroundColor(.black)
+                                .font(.system(size: 20))
+                                .fontWeight(.regular)
+                                .background(.mint)
+                                .cornerRadius(10)
+                        }
+                        .opacity(answers && k < nextChoices.count ? 1 : 0)
+                    }
+                }
             }
         }
     }
@@ -301,6 +340,7 @@ struct ContentView: View {
         undoCount = 0
         selectNumber(num: 0) // 非選択＆数字非マーク状態設定
         sudokuError = false
+        next()
     }
 
     private func allClear() {
@@ -310,6 +350,7 @@ struct ContentView: View {
         undoCount = 0
         selectNumber(num: 0) // 非選択＆数字非マーク状態設定
         sudokuError = false
+        nextChoices = []
     }
 
     private func checkError(row: Int, col: Int, num: Int, sudokuMatrix: [[Int]]) -> Bool {
@@ -333,7 +374,141 @@ struct ContentView: View {
                 }
             }
         }
+        next()
         return false
+    }
+
+    private func getTextNextChoices(n: Int, dt: [[Int]]) -> String {
+        var answer = " "
+        if n < dt.count {
+            answer = String(dt[n][0]) + "," + String(dt[n][1]) + ":" + String(dt[n][2])
+        }
+        return answer
+    }
+
+    private func next() {
+        var candidates = listCandidates(sudokuMatrix: data)
+        var answer: [[Int]] = []
+
+        answer = getAnswerNakedSingle(candicates_9x9: candidates)
+        let newAnswer = getAnswerHiddenSingle(candicates_9x9: candidates)
+        for ans in newAnswer {
+            answer.append(ans)
+        }
+
+        nextChoices = answer
+    }
+
+    private func getAnswerNakedSingle(candicates_9x9: [[[Int]]]) -> [[Int]]  {
+        var answer: [[Int]] = []
+        for row in 0..<candicates_9x9.count {
+            for col in 0..<candicates_9x9[row].count {
+                if candicates_9x9[row][col].count == 1 {
+                    answer.append([row, col, candicates_9x9[row][col][0]])
+                }
+            }
+        }
+        return answer
+    }
+
+    private func getAnswerHiddenSingle(candicates_9x9: [[[Int]]]) -> [[Int]]  {
+        var answer: [[Int]] = []
+        let allLocations = getAllLocations(sudokuMatrix: data)
+        for locations in allLocations {
+            var numberLocations: [[[Int]]] = [[], [], [], [], [], [], [], [], []]
+            for c in locations {
+                for n in 0..<numberLocations.count {
+                    let row = c[0]
+                    let col = c[1]
+                    if candicates_9x9[row][col].contains(n + 1) {
+                        numberLocations[n].append([row, col])
+                    }
+                }
+            }
+            for n in 0..<numberLocations.count {
+                if numberLocations[n].count == 1 {
+                    let row = numberLocations[n][0][0]
+                    let col = numberLocations[n][0][1]
+                    let num = n + 1
+                    if candicates_9x9[row][col].count > 1 {
+                        let strAnswer = answer.map { String(describing: $0) }
+                        if !strAnswer.contains(String(describing:[row, col, num])) {
+                            answer.append([row, col, num])
+                        }
+                    }
+                }
+            }
+        }
+        return answer
+    }
+
+    private func listCandidates(sudokuMatrix: [[Int]]) -> [[[Int]]] {
+        // 9x9の候補リスト（３次元配列）を返します
+        var candicates_9x9: [[[Int]]] = []
+        for r in 0..<sudokuMatrix.count {
+            var candicates_1x9: [[Int]] = []
+            for c in 0..<sudokuMatrix[r].count {
+                let candicates_1x1 = getCcandicates(row: r, col: c, sudokuMatrix: sudokuMatrix)
+                candicates_1x9.append(candicates_1x1) // 1セル分追加
+            }
+            candicates_9x9.append(candicates_1x9) // 1行分追加
+        }
+        return candicates_9x9
+    }
+
+    private func getCcandicates(row: Int, col: Int, sudokuMatrix: [[Int]]) -> [Int] {
+        // 1x1 指定されたセルの候補リスト（１次元配列）を返します
+        var candicates_1x1: [Int] = []
+        if sudokuMatrix[row][col] == 0 {
+            candicates_1x1 = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+            let baseRow = Int(row / 3) * 3
+            let baseCol = Int(col / 3) * 3
+            for r in baseRow..<baseRow + 3 {
+                for c in baseCol..<baseCol + 3 {
+                    candicates_1x1 = candicates_1x1.filter { $0 != sudokuMatrix[r][c] } // ブロックにある数値を取り除きます
+                }
+            }
+            for r in 0..<sudokuMatrix.count {
+                candicates_1x1 = candicates_1x1.filter { $0 != sudokuMatrix[r][col] } // 行にある数値を取り除きます
+            }
+            for c in 0..<sudokuMatrix[row].count {
+                candicates_1x1 = candicates_1x1.filter { $0 != sudokuMatrix[row][c] } // 列にある数値を取り除きます
+            }
+        }
+        return candicates_1x1
+    } 
+
+    private func getAllLocations(sudokuMatrix: [[Int]]) -> [[[Int]]] {
+        // ブロック(3x3)、行(1x9)、列(9x1)の行と列の組み合わせパターン27組を返す
+        var locations: [[[Int]]] = []
+        for brow in 0..<3 {
+            for bcol in 0..<3 {
+                var locations_line: [[Int]] = []
+                let baseRow = brow * 3
+                let baseCol = bcol * 3
+                for row in baseRow..<baseRow + 3 {
+                    for col in baseCol..<baseCol + 3 {
+                        locations_line.append([row, col])
+                    }  
+                }
+                locations.append(locations_line)
+            }
+        }
+        for row in 0..<sudokuMatrix.count {
+            var locations_line: [[Int]] = []
+            for col in 0..<sudokuMatrix[row].count {
+                locations_line.append([row, col])
+            }
+            locations.append(locations_line)
+        }
+        for col in 0..<sudokuMatrix[0].count {
+            var locations_line: [[Int]] = []
+            for row in 0..<sudokuMatrix.count {
+                locations_line.append([row, col])
+            }
+            locations.append(locations_line)
+        }
+        return locations
     }
 
 }
