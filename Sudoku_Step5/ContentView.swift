@@ -1,4 +1,11 @@
 import SwiftUI
+import Foundation
+
+struct SudokuData {
+    var id: String = UUID().uuidString
+    var name: String
+    var content: String
+}
 
 struct ContentView: View {
     @State private var selected = false
@@ -12,6 +19,9 @@ struct ContentView: View {
     @State private var data_save = Array(repeating: Array(repeating: 0, count: 9), count: 9)
     @State private var answers = false
     @State private var nextChoices: [[Int]] = []
+    @State private var sudoku_data = [SudokuData]()
+    @State private var listn = 0
+    @State private var isEdit = false
 
     var body: some View {
         let cellSize = CGFloat(40)
@@ -35,7 +45,11 @@ struct ContentView: View {
         VStack(spacing:4) {
             SudokuNumberButtons()
             SudokuFunctionButtons()
-            SudokuAnswerButtons()
+            if answers {
+                SudokuAnswerButtons()
+            } else {
+                SudokuLists()
+            }
         }
     }
 
@@ -100,7 +114,7 @@ struct ContentView: View {
                     .frame(width: 38, height: 26, alignment: .center)
                     .foregroundColor(.black)
                     .background(.white)
-                    .font(.system(size: 20))                        
+                    .font(.system(size: 20))
             }
         }
     }
@@ -187,6 +201,180 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    func SudokuLists() -> some View{
+        HStack {
+            Button(action: {
+                append_data()  // データをリストに追加
+                writefile()    // ファイルに書き込み
+            }) {
+                Text("append")
+            }
+            .opacity(isEdit ? 0 : 1)  // リスト編集モードの時は追加ボタンを隠す
+            Spacer()
+            Button(action: {
+                isEdit.toggle()  // editボタン
+            }) {
+                Text(isEdit ? "close" : "edit")
+                .opacity(listn == 0 ? 1 : 0)  // 個別のリスト編集中は閉じられないようにボタンを隠す
+            }
+        }
+        .padding(EdgeInsets(top: 5, leading: 20, bottom: 5, trailing: 20))
+        List {
+            if !isEdit {   // リスト編集モードでないとき
+                ForEach(0..<sudoku_data.count, id: \.self) { index in
+                    Button(action: {
+                        set_sudoku_data(index: index)  // 選択の内容をsudokuに設定
+                    }, label: {
+                        Text(sudoku_data[index].name)  // nameを表示
+                    })
+                }
+            } else {  // リスト編集モードの場合、編集（ペンマーク）、削除（ゴミ箱）を表示
+                ForEach(0..<sudoku_data.count, id: \.self) { index in
+                    HStack {
+                        if listn != index + 1 { // 個別編集モードで無いとき
+                            Text(sudoku_data[index].name)  // name テキスト表示
+                        } else {  // 個別編集モードのときは
+                            TextField("", text: $sudoku_data[index].name)  // TextFieldにして編集可
+                                .textFieldStyle(RoundedBorderTextFieldStyle())
+                        }
+
+                        Spacer()
+
+                        Button(action: {
+                            if listn != index + 1 {
+                                listn = index + 1  // 個別編集モードに設定
+                            } else {
+                                listn = 0     // 個別編集モードを解除
+                                writefile()   // ファイルに書き込み
+                            }
+                        }, label: {
+                            Image(systemName: "pencil")  // 編集ボタンイメージ
+                        })
+                        .frame(width: 30, alignment: .center)
+                        .buttonStyle(BorderlessButtonStyle())
+                        .opacity(listn == 0 || listn == index + 1 ? 1 : 0)  // 個別編集になったら該当以外の編集ボタンを隠す
+
+                        Button(action: {
+                            let newArray = sudoku_data.filter { $0.id != sudoku_data[index].id }  // 該当するデータを削除
+                            sudoku_data = newArray  // 削除後のデータを問題リストとする
+                            writefile() //  ファイル書き込み
+                        }, label: {
+                            Image(systemName: "trash")  // 削除ボタンイメージ
+                        })
+                        .frame(width: 30, alignment: .center)
+                        .buttonStyle(BorderlessButtonStyle())
+                        .opacity(listn == 0 ? 1 : 0)  // 個別編集中は削除ボタンを隠す
+                    }
+                }
+            }
+        }
+        .listStyle(PlainListStyle())
+        .onAppear {
+            readfile()
+        }
+    }
+
+    private func readfile() {
+        // アプリ固有のドキュメント領域から問題リストを読み込み
+        let fileName = "sudoku.txt"
+        if let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let fileURL = documentDirectory.appendingPathComponent(fileName)
+            do {
+                let text = try String(contentsOf: fileURL, encoding: .utf8)
+                let components = text.components(separatedBy: "\n")  // 改行で分割
+                sudoku_data = []
+                for row in components {
+                    let col = row.components(separatedBy: ",")  // カンマで分割
+                    if col.count == 3 {
+                        let cnvname = col[1].replacingOccurrences(of: "<<<comma>>>", with: ",")  // 別の形のカンマを復元
+                        sudoku_data.append(SudokuData(name: cnvname, content: col[2]))
+                    }
+                }
+                print("File was successfully read: \(fileURL)")
+            } catch {
+                print("Error reading file: \(error)")  // 新しくプロジェクトを作成するとファイルがないので必ずエラーになる
+                init_data()  // 初期値データを設定
+                writefile()  // ファイル保存
+            }
+        }
+    }
+
+    private func writefile() {
+        // アプリ固有のドキュメント領域に問題リストを保存
+        var csvData: String = ""
+        for row in sudoku_data {
+            let cnvname = row.name.replacingOccurrences(of: ",", with: "<<<comma>>>")  // nameにカンマがある場合は別の形に変換
+            csvData += row.id
+            csvData += ","
+            csvData += cnvname
+            csvData += ","
+            csvData += row.content
+            csvData += "\n"
+        }
+        let fileName = "sudoku.txt"
+        if let documentDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first {
+            let fileURL = documentDirectory.appendingPathComponent(fileName)
+            do {
+                try csvData.write(to: fileURL, atomically: true, encoding: .utf8)
+                print("Successfully wrote to file: \(fileURL)")
+            } catch {
+                print("Error writing to file: \(error)")
+            }
+        }
+    }
+
+    private func init_data() {
+        // 乱数で問題を作成して解けるものだけ残す方法で自動生成したオリジナル問題集
+        sudoku_data = []
+        sudoku_data.append(SudokuData(name: "Test21-001", content: "000900800002000001700504030900000740013000006000000000004000070000060009369000000"))
+        sudoku_data.append(SudokuData(name: "Test21-002", content: "407000050000095010000080006000004027085003000000000000720900000000000700000260005"))
+        sudoku_data.append(SudokuData(name: "Test21-003", content: "000900800002000001700504030900000740013000006000000000004000070000060009369000000"))
+        sudoku_data.append(SudokuData(name: "Test21-004", content: "000200004039000000007000610000005700400600005092000000800000000050007030000034002"))
+        sudoku_data.append(SudokuData(name: "Test21-005", content: "000000490002001000003046050018000000000009006000270000400030207090000001000005000"))
+        sudoku_data.append(SudokuData(name: "Test21-006", content: "000907000000080000050000210700020060408005000000010003000000000012009085006001000"))
+        sudoku_data.append(SudokuData(name: "Test21-007", content: "407000050000095010000080006000004027085003000000000000720900000000000700000260005"))
+        sudoku_data.append(SudokuData(name: "Test21-008", content: "000000000008050006000708100000000004030009000409102000900040000000560003270000010"))
+        sudoku_data.append(SudokuData(name: "Test21-009", content: "000000070000200106005001000100000800060740000409000000000018005000060040007530000"))
+        sudoku_data.append(SudokuData(name: "Test21-010", content: "006000902000000000002300001401009000300000007000020008800160000000790040050000600"))
+        sudoku_data.append(SudokuData(name: "Test21-011", content: "000900010045700030000004000900000003000080402007000600080020000002501000300000070"))
+        sudoku_data.append(SudokuData(name: "Test21-012", content: "500000800000260000000000009406001090900000005000005070000090604002000010700048000"))
+        sudoku_data.append(SudokuData(name: "Test21-013", content: "080643100104900000063080040035000008040000001010038200001020000000000600320504907"))
+        sudoku_data.append(SudokuData(name: "Test22-001", content: "070100000090004000000000000100900020003072800000008005000020347760003000080000090"))
+        sudoku_data.append(SudokuData(name: "Test22-002", content: "800030000000900000790020001023000070005084000000000360004000000200070694000005000"))
+        sudoku_data.append(SudokuData(name: "Test22-003", content: "089300000001006070007020000000008200010050040500000003600000000000001900020600308"))
+        sudoku_data.append(SudokuData(name: "Test22-004", content: "009600052100000000000800000740006010006040000000500000000980000020000760005203008"))
+        sudoku_data.append(SudokuData(name: "Test22-005", content: "097040000200790016300000000089006070001000000000000105500001000000970003000020000"))
+        sudoku_data.append(SudokuData(name: "Test22-006", content: "000000000006000030050700480000206000802040100000008570200000003003001006000509000"))
+        sudoku_data.append(SudokuData(name: "Test22-007", content: "002000047700000009908200000000100006006000080005023000000000000000078590003004100"))
+        sudoku_data.append(SudokuData(name: "Test22-008", content: "000060180000000050920300700400980000007000015000002000001400300600200004070000000"))
+        sudoku_data.append(SudokuData(name: "Test22-009", content: "200603000079000054000000000150070060400000000002300090065007000000900000000400308"))
+        sudoku_data.append(SudokuData(name: "Test22-010", content: "000050090004070200017300000000020080500016003000007000020000100600900004000008500"))
+    }
+
+    private func append_data() {
+        // 問題データをリストに追加
+        let temp = data[0 ..< data.count].map{$0[0 ..< $0.count].map{String($0)}.joined()}.joined() // 問題保存データを１つの文字列に結合
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        let formattedDate = dateFormatter.string(from: Date()) // データ判別用に日付時刻をname用に準備
+        sudoku_data.append(SudokuData(name: formattedDate, content: temp)) // 問題リストに追加
+    }
+
+    private func set_sudoku_data(index: Int) {
+        // 問題リストから指定位置を読みだして設定
+        let dt = sudoku_data[index].content
+        let dtarray = Array(dt)
+        let str = dtarray.map{String($0)} // バイナリーを文字列に変換
+        for i in 0..<str.count { 
+            let row = Int(i / 9) 
+            let col = Int(i % 9) 
+            data[row][col] = Int(str[i])! // Intに変換してsudokuに設定
+        }
+        setMemory()   // 問題保存メモリーに保存
+        loadMemory()  // 保存メモリーから呼び出し設定
     }
 
     private func selectCell(row: Int, col: Int) {
