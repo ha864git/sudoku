@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var sudokuError = false
     @State private var data = Array(repeating: Array(repeating: 0, count: 9), count: 9)
     @State private var data_save = Array(repeating: Array(repeating: 0, count: 9), count: 9)
+    @State private var data_hints: [[String]] = Array(repeating: Array(repeating: "", count: 9), count: 9)
     @State private var answers = false
     @State private var nextChoices: [[Int]] = []
     @State private var sudoku_data = [SudokuData]()
@@ -76,9 +77,9 @@ struct ContentView: View {
                                                 Text(getCellText(row: row, col: col))
                                                     .frame(width: cellSize, height: cellSize, alignment: .center)
                                                     .border(lineColor)
-                                                    .foregroundColor(.black)
+                                                    .foregroundColor(getCellFontColor(row: row, col: col))
                                                     .background(getCellColor(row: row, col: col))
-                                                    .font(.system(size: 35))
+                                                    .font(getCellFontSize(row: row, col: col))
                                                     .fontWeight(data_save[row][col] == 0 ? .regular : .semibold) // 問題は太字で表示
                                             }
                                         }
@@ -427,12 +428,29 @@ struct ContentView: View {
         }
     }
 
+    private func getCellFontColor(row: Int, col: Int) -> Color {
+        if answers && data_hints[row][col] != "" {
+            return Color.red
+        }
+        return Color.black
+    }
+
+    private func getCellFontSize(row: Int, col: Int) -> Font {
+        var size: CGFloat = 35
+        if answers && data_hints[row][col] != "" {
+            size = 15
+        }
+        return .system(size: size)
+    }
+
     private func getCellText(row: Int, col: Int) -> String {
         // Cellに表示する文字を返す
         // 0 の時はスペースを返す
         var answer = " "
         if data[row][col] != 0 {
             answer = String(data[row][col])
+        } else if answers && data_hints[row][col] != "" {
+            answer = data_hints[row][col]
         }
         return answer
     }
@@ -488,6 +506,8 @@ struct ContentView: View {
                         sudokuError = true
                     }
                     return
+                } else {
+                    next()
                 }
             }
         }
@@ -528,6 +548,7 @@ struct ContentView: View {
         undoCount = 0
         selectNumber(num: 0) // 非選択＆数字非マーク状態設定
         sudokuError = false
+        data_hints = Array(repeating: Array(repeating: "", count: 9), count: 9)
         next()
     }
 
@@ -539,6 +560,7 @@ struct ContentView: View {
         selectNumber(num: 0) // 非選択＆数字非マーク状態設定
         sudokuError = false
         nextChoices = []
+        data_hints = Array(repeating: Array(repeating: "", count: 9), count: 9)
     }
 
     private func checkError(row: Int, col: Int, num: Int, sudokuMatrix: [[Int]]) -> Bool {
@@ -575,6 +597,7 @@ struct ContentView: View {
     }
 
     private func next() {
+        data_hints = Array(repeating: Array(repeating: "", count: 9), count: 9)
         var candidates = listCandidates(sudokuMatrix: data)
         var answer: [[Int]] = []
 
@@ -582,6 +605,18 @@ struct ContentView: View {
         let newAnswer = getAnswerHiddenSingle(candicates_9x9: candidates)
         for ans in newAnswer {
             answer.append(ans)
+        }
+
+        if answer.count == 0 {
+            var update = false
+            repeat {
+                update = updateLockedCandicates(candicates_9x9: &candidates)
+            } while update
+            answer = getAnswerNakedSingle(candicates_9x9: candidates)
+            let newAnswer = getAnswerHiddenSingle(candicates_9x9: candidates)
+            for ans in newAnswer {
+                answer.append(ans)
+            }
         }
 
         nextChoices = answer
@@ -628,6 +663,252 @@ struct ContentView: View {
             }
         }
         return answer
+    }
+
+    private func updateLockedCandicates(candicates_9x9: inout [[[Int]]]) -> Bool  {
+        var update: Bool = false
+        var candicates_Row: [[[[Int]]]] = []
+        var candicates_Column: [[[[Int]]]] = []
+        var candicates_Block: [[[[Int]]]] = []
+        for _ in 0..<9 {
+            var temp_Row: [[[Int]]] = []
+            var temp_Column: [[[Int]]] = []
+            var temp_Block: [[[Int]]] = []
+            for _ in 0..<9 {
+                temp_Row.append([])
+                temp_Column.append([])
+                temp_Block.append([])
+            }
+            candicates_Row.append(temp_Row)
+            candicates_Column.append(temp_Column)
+            candicates_Block.append(temp_Block)
+        }
+        // Block Loop
+        for block in 0..<9 {
+            let baseRow = Int(block / 3) * 3
+            let baseCol = Int(block % 3) * 3
+            var numberLocations: [[[Int]]] = [[], [], [], [], [], [], [], [], []]
+            for row in baseRow..<baseRow + 3 {
+                for col in baseCol..<baseCol + 3 {
+                    for n in 0..<numberLocations.count {
+                        if candicates_9x9[row][col].contains(n + 1) {
+                            numberLocations[n].append([row, col])
+                        }
+                    }
+                }
+            }
+            for n in 0..<numberLocations.count {
+                let times = numberLocations[n].count
+                if times > 0 {
+                    for location in numberLocations[n] {
+                        candicates_Block[location[0]][location[1]].append([n + 1, times])
+                    }
+                }
+            }
+            // Locked Candidates (row within block)
+            for row in baseRow..<baseRow + 3 {
+                for times in 2..<3 + 1 {
+                    var columnLocations: [[Int]] = [[], [], [], [], [], [], [], [], []]
+                    for col in baseCol..<baseCol + 3 {
+                        for i in 0..<candicates_Block[row][col].count {
+                            if candicates_Block[row][col][i][1] == times {
+                                columnLocations[candicates_Block[row][col][i][0] - 1].append(col)
+                            }
+                        }
+                    }
+                    for n in 0..<columnLocations.count {
+                        if columnLocations[n].count == times {
+                            for col in 0..<candicates_9x9[row].count {
+                                if !columnLocations[n].contains(col) {
+                                    let str = candicates_9x9[row][col].map { String(describing: $0) }
+                                    candicates_9x9[row][col] = candicates_9x9[row][col].filter { $0 != n + 1 }
+                                    if str != (candicates_9x9[row][col].map { String(describing: $0) }) {
+                                        update = true
+                                    }
+                                }
+                            }
+                            if update {
+                                for col in 0..<candicates_9x9[row].count {
+                                    if columnLocations[n].contains(col) {
+                                        if !data_hints[row][col].contains(String(n + 1)) {
+                                            if data_hints[row][col].count > 0 {
+                                                data_hints[row][col] += " "
+                                            }
+                                            data_hints[row][col] += String(n + 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Locked Candidates (column within block)
+            for col in baseCol..<baseCol + 3 {
+                for times in 2..<3 + 1 {
+                    var rowLocations: [[Int]] = [[], [], [], [], [], [], [], [], []];
+                    for row in baseRow..<baseRow + 3 {
+                        for i in 0..<candicates_Block[row][col].count {
+                            if candicates_Block[row][col][i][1] == times {
+                                rowLocations[candicates_Block[row][col][i][0] - 1].append(row)
+                            }
+                        }
+                    }
+                    for n in 0..<rowLocations.count {
+                        if rowLocations[n].count == times {
+                            for row in 0..<candicates_9x9.count {
+                                if !rowLocations[n].contains(row) {
+                                    let str = candicates_9x9[row][col].map { String(describing: $0) }
+                                    candicates_9x9[row][col] = candicates_9x9[row][col].filter { $0 != n + 1 }
+                                    if str != (candicates_9x9[row][col].map { String(describing: $0) }) {
+                                        update = true
+                                    }
+                                }
+                            }
+                            if update {
+                                for row in 0..<candicates_9x9.count {
+                                    if rowLocations[n].contains(row) {
+                                        if !data_hints[row][col].contains(String(n + 1)) {
+                                            if data_hints[row][col].count > 0 {
+                                                data_hints[row][col] += " "
+                                            }
+                                            data_hints[row][col] += String(n + 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Row Loop
+        for row in 0..<candicates_9x9.count {
+            var numberLocations: [[[Int]]] = [[], [], [], [], [], [], [], [], []]
+            for col in 0..<candicates_9x9[row].count {
+                for n in 0..<numberLocations.count {
+                    if candicates_9x9[row][col].contains(n + 1) {
+                        numberLocations[n].append([row, col])
+                    }
+                }
+            }
+            for n in 0..<numberLocations.count {
+                let times = numberLocations[n].count
+                if times > 0 {
+                    for location in numberLocations[n] {
+                        candicates_Row[location[0]][location[1]].append([n + 1, times])
+                    }
+                }
+            }
+            // Locked Candidates (block within row)
+            for block in 0..<3 {
+                let baseRow = Int(row / 3) * 3
+                let baseCol = block * 3
+                for times in 2..<3 + 1 {
+                    var columnLocations: [[Int]] = [[], [], [], [], [], [], [], [], []];
+                    for col in baseCol..<baseCol + 3 {
+                        for i in 0..<candicates_Row[row][col].count {
+                            if candicates_Row[row][col][i][1] == times {
+                                columnLocations[candicates_Row[row][col][i][0] - 1].append(col)
+                            }
+                        }
+                    }
+                    for n in 0..<columnLocations.count {
+                        if columnLocations[n].count == times {
+                            for row2 in baseRow..<baseRow + 3 {
+                                for col in baseCol..<baseCol + 3 {
+                                    if row2 != row || !columnLocations[n].contains(col) {
+                                        let str = candicates_9x9[row2][col].map { String(describing: $0) }
+                                        candicates_9x9[row2][col] = candicates_9x9[row2][col].filter { $0 != n + 1 }
+                                        if str != (candicates_9x9[row2][col].map { String(describing: $0) }) {
+                                            update = true
+                                        }
+                                    }
+                                }
+                            }
+                            if update {
+                                for row2 in baseRow..<baseRow + 3 {
+                                    for col in baseCol..<baseCol + 3 {
+                                        if row2 == row && columnLocations[n].contains(col) {
+                                            if !data_hints[row][col].contains(String(n + 1)) {
+                                                if data_hints[row][col].count > 0 {
+                                                    data_hints[row][col] += " "
+                                                }
+                                                data_hints[row][col] += String(n + 1)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Column Loop
+        for col in 0..<candicates_9x9.count {
+            var numberLocations: [[[Int]]] = [[], [], [], [], [], [], [], [], []]
+            for row in 0..<candicates_9x9.count {
+                for n in 0..<numberLocations.count {
+                    if candicates_9x9[row][col].contains(n + 1) {
+                        numberLocations[n].append([row, col])
+                    }
+                }
+            }
+            for n in 0..<numberLocations.count {
+                let times = numberLocations[n].count
+                if times > 0 {
+                    for location in numberLocations[n] {
+                        candicates_Row[location[0]][location[1]].append([n + 1, times])
+                    }
+                }
+            }
+            // Locked Candidates (block within Column)
+            for block in 0..<3 {
+                let baseRow = block * 3
+                let baseCol = Int(col / 3) * 3
+                for times in 2..<3 + 1 {
+                    var rowLocations: [[Int]] = [[], [], [], [], [], [], [], [], []];
+                    for row in baseRow..<baseRow + 3 {
+                        for i in 0..<candicates_Block[row][col].count {
+                            if candicates_Block[row][col][i][1] == times {
+                                rowLocations[candicates_Block[row][col][i][0] - 1].append(row)
+                            }
+                        }
+                    }
+                    for n in 0..<rowLocations.count {
+                        if rowLocations[n].count == times {
+                            for row in baseRow..<baseRow + 3 {
+                                for col2 in baseCol..<baseCol + 3 {
+                                    if col2 != col || !rowLocations[n].contains(row) {
+                                        let str = candicates_9x9[row][col2].map { String(describing: $0) }
+                                        candicates_9x9[row][col2] = candicates_9x9[row][col2].filter { $0 != n + 1 }
+                                        if str != (candicates_9x9[row][col2].map { String(describing: $0) }) {
+                                            update = true
+                                        }
+                                    }
+                                }
+                            }
+                            if update {
+                                for row in baseRow..<baseRow + 3 {
+                                    for col2 in baseCol..<baseCol + 3 {
+                                        if col2 == col && rowLocations[n].contains(row) {
+                                            if !data_hints[row][col].contains(String(n + 1)) {
+                                                if data_hints[row][col].count > 0 {
+                                                    data_hints[row][col] += " "
+                                                }
+                                                data_hints[row][col] += String(n + 1)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return update
     }
 
     private func listCandidates(sudokuMatrix: [[Int]]) -> [[[Int]]] {
