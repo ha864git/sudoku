@@ -340,9 +340,9 @@ struct ContentView: View {
         sudoku_data.append(SudokuData(name: "Test21-008", content: "000000000008050006000708100000000004030009000409102000900040000000560003270000010"))
         sudoku_data.append(SudokuData(name: "Test21-009", content: "000000070000200106005001000100000800060740000409000000000018005000060040007530000"))
         sudoku_data.append(SudokuData(name: "Test21-010", content: "006000902000000000002300001401009000300000007000020008800160000000790040050000600"))
-        sudoku_data.append(SudokuData(name: "Test21-011", content: "000900010045700030000004000900000003000080402007000600080020000002501000300000070"))
-        sudoku_data.append(SudokuData(name: "Test21-012", content: "500000800000260000000000009406001090900000005000005070000090604002000010700048000"))
-        sudoku_data.append(SudokuData(name: "Test21-013", content: "080643100104900000063080040035000008040000001010038200001020000000000600320504907"))
+        sudoku_data.append(SudokuData(name: "Test21-011", content: "002030000000910800060000000000000136050006000720000004005000002400001000083000005"))
+        sudoku_data.append(SudokuData(name: "Test21-012", content: "000000001900050000000007400062000010730600040000400090501080000000000000008070306"))
+        sudoku_data.append(SudokuData(name: "Test21-013", content: "700000030040000000000130020090000008001700050000054000600000009580090400000500600"))
         sudoku_data.append(SudokuData(name: "Test22-001", content: "070100000090004000000000000100900020003072800000008005000020347760003000080000090"))
         sudoku_data.append(SudokuData(name: "Test22-002", content: "800030000000900000790020001023000070005084000000000360004000000200070694000005000"))
         sudoku_data.append(SudokuData(name: "Test22-003", content: "089300000001006070007020000000008200010050040500000003600000000000001900020600308"))
@@ -846,7 +846,7 @@ struct ContentView: View {
             }
         }
         // Column Loop
-        for col in 0..<candicates_9x9.count {
+        for col in 0..<candicates_9x9[0].count {
             var numberLocations: [[[Int]]] = [[], [], [], [], [], [], [], [], []]
             for row in 0..<candicates_9x9.count {
                 for n in 0..<numberLocations.count {
@@ -859,7 +859,7 @@ struct ContentView: View {
                 let times = numberLocations[n].count
                 if times > 0 {
                     for location in numberLocations[n] {
-                        candicates_Row[location[0]][location[1]].append([n + 1, times])
+                        candicates_Column[location[0]][location[1]].append([n + 1, times])
                     }
                 }
             }
@@ -870,9 +870,9 @@ struct ContentView: View {
                 for times in 2..<3 + 1 {
                     var rowLocations: [[Int]] = [[], [], [], [], [], [], [], [], []];
                     for row in baseRow..<baseRow + 3 {
-                        for i in 0..<candicates_Block[row][col].count {
-                            if candicates_Block[row][col][i][1] == times {
-                                rowLocations[candicates_Block[row][col][i][0] - 1].append(row)
+                        for i in 0..<candicates_Column[row][col].count {
+                            if candicates_Column[row][col][i][1] == times {
+                                rowLocations[candicates_Column[row][col][i][0] - 1].append(row)
                             }
                         }
                     }
